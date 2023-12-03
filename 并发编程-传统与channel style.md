@@ -18,22 +18,22 @@ Mutex可执行的操作为`Lock`与`Unlock`，前者上锁，本质是等待获�
 
 ```go
 func main() {
-	share := 0
-	finished := make(chan bool)
-	race := func() {
-		for i := 1; i <= 100000; i++ {
-			share++
-		}
-		finished <- true
-	}
+    share := 0
+    finished := make(chan bool)
+    race := func() {
+        for i := 1; i <= 100000; i++ {
+            share++
+        }
+        finished <- true
+    }
 
-	go race()
-	go race()
-	for i := 0; i < 2; i++ {
-		<-finished
-	}
+    go race()
+    go race()
+    for i := 0; i < 2; i++ {
+        <-finished
+    }
 
-	fmt.Println(share)
+    fmt.Println(share)
 }
 ```
 
@@ -41,25 +41,25 @@ func main() {
 
 ```go
 func main() {
-	share := 0
-	finished := make(chan bool)
-	mutex := Mutex{}
-	race := func() {
-		mutex.Lock()
-		for i := 1; i <= 100000; i++ {
-			share++
-		}
-		mutex.Unlock()
-		finished <- true
-	}
+    share := 0
+    finished := make(chan bool)
+    mutex := Mutex{}
+    race := func() {
+        mutex.Lock()
+        for i := 1; i <= 100000; i++ {
+            share++
+        }
+        mutex.Unlock()
+        finished <- true
+    }
 
-	go race()
-	go race()
-	for i := 0; i < 2; i++ {
-		<-finished
-	}
+    go race()
+    go race()
+    for i := 0; i < 2; i++ {
+        <-finished
+    }
 
-	fmt.Println(share)
+    fmt.Println(share)
 }
 
 ```
@@ -69,16 +69,16 @@ func main() {
 
 ```go
 type Mutex struct {
-	value int32
+    value int32
 }
 
 func (m *Mutex) Lock() {
-	for !atomic.CompareAndSwapInt32(&m.value, 0, 1) {
-	}
+    for !atomic.CompareAndSwapInt32(&m.value, 0, 1) {
+    }
 }
 
 func (m *Mutex) Unlock() {
-	atomic.StoreInt32(&m.value, 0)
+    atomic.StoreInt32(&m.value, 0)
 }
 ```
 
@@ -92,39 +92,39 @@ func (m *Mutex) Unlock() {
 
 ```go
 type Semaphore struct {
-	value int32
+    value int32
 }
 
 func (s *Semaphore) Wait() {
-	for atomic.LoadInt32(&s.value) == 0 {
-	}
-	atomic.AddInt32(&s.value, -1)
+    for atomic.LoadInt32(&s.value) == 0 {
+    }
+    atomic.AddInt32(&s.value, -1)
 }
 
 func (s *Semaphore) Signal() {
-	atomic.AddInt32(&s.value, 1)
+    atomic.AddInt32(&s.value, 1)
 }
 
 func main() {
-	share := 0
-	finished := make(chan bool)
-	semaphore := Semaphore{value: 1}
-	race := func() {
-		semaphore.Wait()
-		for i := 1; i <= 100000; i++ {
-			share++
-		}
-		semaphore.Signal()
-		finished <- true
-	}
+    share := 0
+    finished := make(chan bool)
+    semaphore := Semaphore{value: 1}
+    race := func() {
+        semaphore.Wait()
+        for i := 1; i <= 100000; i++ {
+            share++
+        }
+        semaphore.Signal()
+        finished <- true
+    }
 
-	go race()
-	go race()
-	for i := 0; i < 2; i++ {
-		<-finished
-	}
+    go race()
+    go race()
+    for i := 0; i < 2; i++ {
+        <-finished
+    }
 
-	fmt.Println(share)
+    fmt.Println(share)
 }
 ```
 
