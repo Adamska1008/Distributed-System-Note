@@ -83,7 +83,7 @@ func (m *Mutex) Unlock() {
 }
 ```
 
-#### 信号量
+#### 信号量（Semaphore）
 
 信号量（Semaphore）是一个计数器，表示可用资源的数量。它提供两种操作：
 1. wait（P操作）：当线程希望访问资源时，首先使用P操作。如果信号量大于1，表示有剩余资源，将计数器减一并继续执行；否则线程阻塞。
@@ -274,6 +274,110 @@ func (q *ConcurrentQueue) Flush() {
 ```
 
 此时可能导致其他问题：当`Pop`运行完`Wait`，未执行`Lock`时，可能调用`Flush`，接下来`Pop`再获取锁并允许，便会导致访问空数组。
-### 条件变量（Condition Variable）
+#### 条件变量（Condition Variable）
 
+条件变量同样使用wait与signal原语。当线程调用wait时，会休眠并被添加到等待队列中，直到其他某个线程调用signal，此时便会从等待队列中挑选一个线程唤醒。条件变量通常与互斥量配合使用，当调用wait休眠时会释放锁，当被其他线程唤醒时又重新获得这个锁。
+
+```go
+func (q *ConcurrentQueue) Push(val int) {
+	q.m.Lock()
+	defer q.m.Unlock()
+	q.inner = append(q.inner, val)
+	q.cvar.Signal()
+}
+
+func (q *ConcurrentQueue) Pop() int {
+	q.m.Lock()
+	defer q.m.Unlock()
+	for len(q.inner) == 0 {
+		q.cvar.Wait()
+	}
+	val := q.inner[0]
+	q.inner = q.inner[1:]
+	return val
+}
+
+func (q *ConcurrentQueue) Flush() {
+	q.m.Lock()
+	defer q.m.Unlock()
+	q.inner = make([]int, 0)
+}
+```
+
+在上面的代码中，`Push`处的`Signal`方法在等待队列中无等待线程时，不执行任何操作，故不需要保证`Signal`和`Wait`的次数具有对应关系。
+
+不难想到，上文 `Pop` 代码中的`for`语句替换为`if`语句似乎不影响其正确性。为什么要用`for`？这涉及到两个概念：**梅萨语义（Mesa Semantics）** 与 **霍尔语义（Hoare Semantics）**。
+
+梅萨语义和霍尔语义是并发编程中两种不同的语义模型。梅萨语义是一种宽松的语义模型，锁的通知不保证立即导致其他线程获得锁，而是其他线程竞争并最终有一个线程获得锁。由于通知和获取并不是一个原子操作，故可能存在获取锁后条件又不满足的情况，故需要获取锁后重新检测条件，因此使用`for`会比`if`更加合适。
+
+与其相反，霍尔语义保证了释放锁后立即有一个线程获取锁，这两个操作集成为一个原子操作，虽然更安全，但对性能可能有一定影响，故在常见编程语言如golang和java中均使用梅萨语义。
+
+### channal style
+
+>Instead of communicating by sharing memory, share memory by communicating.
+
+通道（channel）是一种可以在线程/协程之间传递消息的组件。Go语言将channel作为其核心特性之一，而其他现代语言如Rust同样提供了通道功能。通道的最基本功能是传递消息，接收方在接收时会阻塞直到从通道中读出数据。在之前的代码中我们经常使用`finished := make(chan bool)`来作为协程运行完毕的标记，代替了传统的`join`方法。通道同样可以带有缓存，有缓存的通道不具备同步通信的能力，而是更类似于异步的消息队列。
+
+基于通道的并发编程并不是将通道用作互斥量或条件变量，它有独特的编程思想。
+
+```go
+// channel-style generator
+func generator() <-chan int {
+	ch := make(chan int)
+	for i := 0; ; i++ {
+		time.Sleep(time.Duration(time.Millisecond * 500)) // time-consuming tasks
+		ch <- i
+	}
+}
+```
+
+#### select
+
+`select`语句用于处理多个通道的响应，它类似于`switch`，但每个分支都是一个通信操作。
+
+```go
+select {
+case v1 := <-c1:
+    fmt.Printf("received %v from c1\n", v1)
+case v2 := <-c2:
+    fmt.Printf("received %v from c2\n", v2)
+case c3 <- 23:
+    fmt.Printf("sent %v to c3\n", 23)
+}
+```
+
+`select`语句有如下特点
+1. 持续阻塞，直到某个通信是可以进行的
+2. 如果多个通信可以进行，则随机挑选一个
+3. 如果没有通信可以进行，但有`default`分支，则立即执行`default`
+
+```go
+func fanIn(input1, input2 <- chan stirng) <-chan string {
+     c := make(chan string)
+     go func() {
+         for {
+             select {
+             case s := <- input1: c <- s
+             case s := <- input2: c <- s
+             }
+         }
+     }()
+     return c
+}
+```
+
+#### time.After
+
+`time.After(Duration)`方法返回一个阻塞固定时间的通道。
+
+```go
+for {
+    select {
+    case s := <-c:
+        fmt.Println(s)
+    case <- time.After(1 * time.Second)
+        fmt.Println("too slow")
+    }
+}
+```
 
